@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cyberpunk Air Quality - Bombay Beach</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            background-color: #0a0a0a;
+            color: #ffffff;
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: rgba(0, 0, 0, 0.7);
+            border: 1px solid #00ff00;
+            padding: 20px;
+            box-shadow: 0 0 10px #00ff00;
+        }
+        h1 {
+            color: #ff00ff;
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            margin-bottom: 30px;
+        }
+        .data-section {
+            margin-bottom: 20px;
+            border: 1px solid #00ffff;
+            padding: 10px;
+            background-color: rgba(0, 255, 255, 0.1);
+        }
+        .data-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #00ffff;
+        }
+        .neon {
+            text-shadow: 0 0 5px #00ff00, 0 0 10px #00ff00, 0 0 15px #00ff00;
+        }
+        .error {
+            color: #ff0000;
+            font-weight: bold;
+        }
+        .loading {
+            text-align: center;
+            font-style: italic;
+            color: #00ff00;
+        }
+        #aqi-chart {
+            width: 100%;
+            height: 200px;
+            margin-top: 20px;
+        }
+        .data-source {
+            font-size: 0.8em;
+            color: #888;
+            margin-top: 5px;
+        }
+        #debug-log {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: rgba(0, 0, 0, 0.5);
+            border: 1px solid #888;
+            font-family: monospace;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            color: #ffffff;
+        }
+        .label {
+            color: #00ff00;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="neon">Cyberpunk Air Quality</h1>
+        <div id="loading" class="loading">Initializing cybernetic air sensors...</div>
+        <div id="error" class="error" style="display: none;"></div>
+        <div id="data-container" style="display: none;">
+            <div class="data-section">
+                <div id="location"></div>
+                <div id="coordinates"></div>
+            </div>
+            <div class="data-section">
+                <div><span class="label">AQI:</span> <span id="aqi" class="data-value neon"></span></div>
+                <div><span class="label">Dominant Pollutant:</span> <span id="pollutant"></span></div>
+                <canvas id="aqi-chart"></canvas>
+            </div>
+            <div class="data-section">
+                <div><span class="label">Temperature:</span> <span id="temperature"></span></div>
+                <div><span class="label">Wind:</span> <span id="wind"></span></div>
+            </div>
+            <div class="data-source" id="nws"></div>
+            <div class="data-source" id="openmeteo"></div>
+            <div class="data-source" id="waqi"></div>
+        </div>
+        <div id="debug-log"></div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.1/chart.min.js"></script>
+    <script>
+        const API_URL = '/api/airquality';
+        let chart;
+        const debugLog = document.getElementById('debug-log');
+
+        function log(message) {
+            console.log(message);
+            debugLog.textContent += message + '\n';
+        }
+
+        function updateUI(data) {
+            log('Updating UI with data:');
+            log(JSON.stringify(data, null, 2));
+
+            document.getElementById('location').textContent = 'Location: Bombay Beach, CA';
+            document.getElementById('coordinates').textContent = `Coordinates: ${data.coordinates.latitude}, ${data.coordinates.longitude}`;
+            document.getElementById('aqi').textContent = data.waqi.aqi;
+            document.getElementById('pollutant').textContent = data.waqi.dominant_pollutant;
+            document.getElementById('temperature').textContent = `${data.nws.temperature}°${data.nws.temperatureUnit}`;
+            document.getElementById('wind').textContent = `${data.nws.windSpeed} ${data.nws.windDirection}`;
+            document.getElementById('nws').textContent = `Source: ${data.nws.source}`;
+            document.getElementById('openmeteo').textContent = `Source: ${data.openMeteo.source}`;
+            document.getElementById('waqi').textContent = `Source: ${data.waqi.source}`;
+
+            updateChart(data.waqi.aqi);
+        }
+
+        function updateChart(currentAQI) {
+            log(`Updating chart with AQI: ${currentAQI}`);
+            const ctx = document.getElementById('aqi-chart');
+            const now = new Date();
+            const labels = Array.from({length: 6}, (_, i) => {
+                const d = new Date(now - i * 3600000);
+                return d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            }).reverse();
+
+            if (chart) {
+                chart.data.labels = labels;
+                chart.data.datasets[0].data.push(currentAQI);
+                if (chart.data.datasets[0].data.length > 6) {
+                    chart.data.datasets[0].data.shift();
+                }
+                chart.update();
+            } else {
+                chart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'AQI',
+                            data: [currentAQI],
+                            borderColor: '#00ffff',
+                            tension: 0.1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                grid: {
+                                    color: 'rgba(0, 255, 0, 0.1)'
+                                },
+                                ticks: {
+                                    color: '#ffffff'
+                                }
+                            },
+                            x: {
+                                grid: {
+                                    color: 'rgba(0, 255, 0, 0.1)'
+                                },
+                                ticks: {
+                                    color: '#ffffff'
+                                }
+                            }
+                        },
+                        plugins: {
+                            legend: {
+                                display: false
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        async function fetchData() {
+            log('Fetching data...');
+            try {
+                const response = await fetch(API_URL);
+                log(`Response status: ${response.status}`);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                log('Data received:');
+                log(JSON.stringify(data, null, 2));
+
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('error').style.display = 'none';
+                document.getElementById('data-container').style.display = 'block';
+                updateUI(data);
+            } catch (error) {
+                log(`Error: ${error.message}`);
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('error').style.display = 'block';
+                document.getElementById('error').textContent = 'Error: ' + error.message;
+            }
+        }
+
+        function initializeApp() {
+            log('Script started');
+            fetchData();
+            setInterval(fetchData, 300000); // Refresh every 5 minutes
+        }
+
+        // Wait for Chart.js to load before initializing the app
+        if (typeof Chart === 'undefined') {
+            document.addEventListener('DOMContentLoaded', function () {
+                if (typeof Chart !== 'undefined') {
+                    initializeApp();
+                } else {
+                    log('Error: Chart.js failed to load');
+                    document.getElementById('error').style.display = 'block';
+                    document.getElementById('error').textContent = 'Error: Failed to load Chart.js';
+                }
+            });
+        } else {
+            initializeApp();
+        }
+    </script>
+</body>
+</html>
